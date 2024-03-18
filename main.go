@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strings"
+	"text/template"
 	"time"
 
 	"golang.org/x/crypto/acme/autocert"
@@ -41,60 +44,52 @@ Disallow: /
 	// https://github.com/daisyUniverse/fxdeviantart
 	// and
 	// https://github.com/FixTweet/FxTwitter
-	imageTxt = `
+	staticTemplate = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta content="text/html; charset=UTF-8" http-equiv="Content-Type"/>
-<meta property="theme-color" content="#015196"/>
-<meta http-equiv="refresh" content="0;url=%s"/>
+<meta property="theme-color" content="{{.randomHex}}"/>
+{{if and (not .isTelegramUA) (not .noRedirect)}}
+<meta http-equiv="refresh" content="0;url={{.baseURL}}"/>
+{{end}}
 
-<meta property="og:url" content="%s"/>
-<meta property="og:image" content="%s"/>
-<meta property="og:title" content="%s"/>
-<meta property="og:description" content="%s"/>
-<meta property="og:image:width" content="%d"/>
-<meta property="og:image:height" content="%d"/>
+<meta property="og:url" content="{{.baseURL}}"/>
+<meta property="og:image" content="{{.image}}"/>
+<meta property="og:title" content="{{.title}}"/>
+<meta property="og:description" content="{{.title}}"/>
+<meta property="og:image:width" content="{{.imageWidth}}"/>
+<meta property="og:image:height" content="{{.imageHeight}}"/>
 <meta property="og:site_name" content="dxviantart.com"/>
 
 <meta property="twitter:card" content="summary_large_image"/>
-<meta property="twitter:title" content="%s"/>
-<meta property="twitter:image" content="%s"/>
-<meta property="twitter:image:width" content="%d"/>
-<meta property="twitter:image:height" content="%d"/>
+<meta property="twitter:title" content="{{.title}}"/>
+<meta property="twitter:image" content="{{.image}}"/>
+<meta property="twitter:image:width" content="{{.imageWidth}}"/>
+<meta property="twitter:image:height" content="{{.imageHeight}}"/>
 
-<link rel="alternate" href="https://dxviantart.com/ohembed?displayText=%s&author=%s" type="application/json+oembed" title="%s">
+{{if not .isTelegramUA}}
+<link rel="alternate" href="https://dxviantart.com/ohembed?displayText={{.oembedText}}&author={{.author}}" type="application/json+oembed" title="{{.author}}">
+{{end}}
 </head>
 <body>
-<p>Redirecting, this should only take a second...</p><br><p>Not redirecting? <a href="%s">Click here.</a></p>
-</body>
-</html>`
-	imageTxtTelegram = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta content="text/html; charset=UTF-8" http-equiv="Content-Type"/>
-<meta property="theme-color" content="#015196"/>
-
-<meta property="og:url" content="%s"/>
-<meta property="og:image" content="%s"/>
-<meta property="og:title" content="%s"/>
-<meta property="og:description" content="%s"/>
-<meta property="og:image:width" content="%d"/>
-<meta property="og:image:height" content="%d"/>
-<meta property="og:site_name" content="dxviantart.com"/>
-
-<meta property="twitter:card" content="summary_large_image"/>
-<meta property="twitter:title" content="%s"/>
-<meta property="twitter:image" content="%s"/>
-<meta property="twitter:image:width" content="%d"/>
-<meta property="twitter:image:height" content="%d"/>
-</head>
-<body>
-<img src="%s">
+{{if or (.isTelegramUA) (.noRedirect)}}
+<img src="{{.image}}">
+{{else}}
+<p>Redirecting, this should only take a second...</p><br><p>Not redirecting? <a href="{{.baseURL}}">Click here.</a></p>
+{{end}}
 </body>
 </html>`
 )
+
+func rngHex() string {
+	hexCode := make([]byte, 3)
+	if _, readErr := rand.Read(hexCode); readErr != nil {
+		return "#015196"
+	}
+
+	return "#" + hex.EncodeToString(hexCode)
+}
 
 // https://stackoverflow.com/questions/10599933/convert-long-number-into-abbreviated-string-in-javascript-with-a-special-shortn
 func formatNumber(number float64) string {
@@ -154,51 +149,39 @@ func getImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// check user agent
-	if strings.Contains(r.UserAgent(), "Telegram") {
-		fmt.Fprintf(w, imageTxtTelegram,
-			baseURL,
-			api.Image,
-			api.Title+" by "+api.Author,
-			fmt.Sprintf("👁️  %s  ❤️ %s  💬 %s  ⬇️ %s",
-				formatNumber(float64(api.Community.Statistics.Attributes.Views)),
-				formatNumber(float64(api.Community.Statistics.Attributes.Favorites)),
-				formatNumber(float64(api.Community.Statistics.Attributes.Comments)),
-				formatNumber(float64(api.Community.Statistics.Attributes.Downloads)),
-			),
-			api.Width,
-			api.Height,
-			api.Title+" by "+api.Author,
-			api.Image,
-			api.Width,
-			api.Height,
-			api.Image,
-		)
+	isTelegramUA := strings.Contains(r.UserAgent(), "Telegram")
+	noRedirect := r.URL.Query().Get("staypls") == "1"
+
+	daTemplate, parseErr := template.New("dxviantart").Parse(staticTemplate)
+	if parseErr != nil {
+		log.Println(parseErr)
+
+		http.Error(w, "failed to parse template", http.StatusInternalServerError)
 		return
 	}
 
-	fmt.Fprintf(w, imageTxt,
-		baseURL,
-		baseURL,
-		api.Image,
-		api.Title+" by "+api.Author,
-		api.Title+" by "+api.Author,
-		api.Width,
-		api.Height,
-		api.Title+" by "+api.Author,
-		api.Image,
-		api.Width,
-		api.Height,
-		fmt.Sprintf("👁️  %s  ❤️ %s  💬 %s  ⬇️ %s",
+	if execErr := daTemplate.Execute(w, map[string]any{
+		"isTelegramUA": isTelegramUA,
+		"noRedirect":   noRedirect,
+		"baseURL":      baseURL,
+		"image":        api.Image,
+		"title":        api.Title + " by " + api.Author,
+		"imageWidth":   api.Width,
+		"imageHeight":  api.Height,
+		"oembedText": fmt.Sprintf("👁️  %s  ❤️ %s  💬 %s  ⬇️ %s",
 			formatNumber(float64(api.Community.Statistics.Attributes.Views)),
 			formatNumber(float64(api.Community.Statistics.Attributes.Favorites)),
 			formatNumber(float64(api.Community.Statistics.Attributes.Comments)),
 			formatNumber(float64(api.Community.Statistics.Attributes.Downloads)),
 		),
-		api.Author,
-		api.Author,
-		baseURL,
-	)
+		"author":    api.Author,
+		"randomHex": rngHex(),
+	}); execErr != nil {
+		log.Println(execErr)
+
+		http.Error(w, "failed to parse template", http.StatusInternalServerError)
+		return
+	}
 }
 
 // Thanks! https://github.com/FixTweet/FxTwitter
