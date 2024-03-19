@@ -29,8 +29,8 @@ type deviantArtAPI struct {
 			} `json:"_attributes"`
 		} `json:"statistics"`
 	} `json:"community"`
-	Width  int64 `json:"width"`
-	Height int64 `json:"height"`
+	Width  any `json:"width"`
+	Height any `json:"height"`
 }
 
 const (
