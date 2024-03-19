@@ -6,8 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"text/template"
 	"time"
@@ -16,9 +18,12 @@ import (
 )
 
 type deviantArtAPI struct {
+	Type      string `json:"type"`
 	Title     string `json:"title"`
 	Image     string `json:"url"`
 	Author    string `json:"author_name"`
+	Thumbnail string `json:"thumbnail_url"`
+	VideoHTML string `json:"html"`
 	Community struct {
 		Statistics struct {
 			Attributes struct {
@@ -32,6 +37,12 @@ type deviantArtAPI struct {
 	Width  any `json:"width"`
 	Height any `json:"height"`
 }
+
+var (
+	embedLinkRegex   = regexp.MustCompile(`(?m)https:\/\/backend\.deviantart\.com\/embed\/film[^"]*`)
+	sourcesRegex     = regexp.MustCompile(`(?m)gmon-sources="[^"]*`)
+	idealResolutions = []string{"1080p", "720p", "360p"}
+)
 
 const (
 	minuteTimeout = 1 * time.Minute
@@ -50,23 +61,45 @@ Disallow: /
 <head>
 <meta content="text/html; charset=UTF-8" http-equiv="Content-Type"/>
 <meta property="theme-color" content="{{.randomHex}}"/>
+
 {{if and (not .isTelegramUA) (not .noRedirect)}}
 <meta http-equiv="refresh" content="0;url={{.baseURL}}"/>
 {{end}}
 
 <meta property="og:url" content="{{.baseURL}}"/>
+
+{{if .isVideo}}
+<meta property="og:image" content="{{.thumbnail}}"/>
+<meta property="og:video" content="{{.image}}"/>
+<meta property="og:video:secure_url" content="{{.image}}"/>
+<meta property="og:video:width" content="{{.imageWidth}}"/>
+<meta property="og:video:height" content="{{.imageHeight}}"/>
+<meta property="og:video:type" content="video/mp4"/>
+{{else}}
 <meta property="og:image" content="{{.image}}"/>
-<meta property="og:title" content="{{.title}}"/>
-<meta property="og:description" content="{{.title}}"/>
 <meta property="og:image:width" content="{{.imageWidth}}"/>
 <meta property="og:image:height" content="{{.imageHeight}}"/>
+{{end}}
+
+<meta property="og:title" content="{{.title}}"/>
+<meta property="og:description" content="{{.title}}"/>
 <meta property="og:site_name" content="dxviantart.com"/>
 
-<meta property="twitter:card" content="summary_large_image"/>
 <meta property="twitter:title" content="{{.title}}"/>
+
+{{if .isVideo}}
+<meta property="twitter:card" content="player"/>
+<meta property="twitter:image" content="0"/>
+<meta property="twitter:player:width" content="{{.imageWidth}}"/>
+<meta property="twitter:player:height" content="{{.imageHeight}}"/>
+<meta property="twitter:player:stream" content="{{.image}}"/>
+<meta property="twitter:player:stream:content_type" content="video/mp4"/>
+{{else}}
+<meta property="twitter:card" content="summary_large_image"/>
 <meta property="twitter:image" content="{{.image}}"/>
 <meta property="twitter:image:width" content="{{.imageWidth}}"/>
 <meta property="twitter:image:height" content="{{.imageHeight}}"/>
+{{end}}
 
 {{if not .isTelegramUA}}
 <link rel="alternate" href="https://dxviantart.com/ohembed?displayText={{.oembedText}}&author={{.author}}" type="application/json+oembed" title="{{.author}}">
@@ -74,7 +107,14 @@ Disallow: /
 </head>
 <body>
 {{if or (.isTelegramUA) (.noRedirect)}}
+{{if .isVideo}}
+<video width="{{.imageWidth}}" height="{{.imageHeight}}" poster="{{.thumbnail}}" controls>
+<source src="{{.image}}" type="video/mp4">
+Your browser does not support videos :-( (or something broke)
+</video>
+{{else}}
 <img src="{{.image}}">
+{{end}}
 {{else}}
 <p>Redirecting, this should only take a second...</p><br><p>Not redirecting? <a href="{{.baseURL}}">Click here.</a></p>
 {{end}}
@@ -110,6 +150,64 @@ func formatNumber(number float64) string {
 	}
 
 	return fmt.Sprintf("%.1fT", number/1e12)
+}
+
+func tryReplaceImage(ctx context.Context, api *deviantArtAPI) bool {
+	url := embedLinkRegex.FindString(api.VideoHTML)
+	if url == "" {
+		return false
+	}
+
+	followRequest, followRequestErr := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if followRequestErr != nil {
+		log.Println(followRequestErr)
+		return false
+	}
+
+	followResponse, followResponseErr := http.DefaultClient.Do(followRequest)
+	if followResponseErr != nil {
+		log.Println(followResponseErr)
+		return false
+	}
+	defer followResponse.Body.Close()
+
+	bytesBody, readErr := io.ReadAll(followResponse.Body)
+	if readErr != nil {
+		log.Println(readErr)
+		return false
+	}
+
+	sources := sourcesRegex.FindString(string(bytesBody))
+	if sources == "" {
+		return false
+	}
+
+	sources = strings.ReplaceAll(sources, "gmon-sources=\"", "")
+	sources = strings.ReplaceAll(sources, "&quot;", "\"")
+	sources = strings.ReplaceAll(sources, "\\/", "/")
+
+	m := make(map[string]struct {
+		Src    string `json:"src"`
+		Width  int64  `json:"width"`
+		Height int64  `json:"height"`
+	})
+
+	if unmarshalErr := json.Unmarshal([]byte(sources), &m); unmarshalErr != nil {
+		log.Println(unmarshalErr)
+		return false
+	}
+
+	for i := 0; i < len(idealResolutions); i++ {
+		if d, ok := m[idealResolutions[i]]; ok {
+			api.Width = d.Width
+			api.Height = d.Height
+			api.Image = d.Src
+
+			return true
+		}
+	}
+
+	return false
 }
 
 func getImage(w http.ResponseWriter, r *http.Request) {
@@ -151,6 +249,14 @@ func getImage(w http.ResponseWriter, r *http.Request) {
 
 	isTelegramUA := strings.Contains(r.UserAgent(), "Telegram")
 	noRedirect := r.URL.Query().Get("staypls") == "1"
+	isVideo := api.Type == "video"
+
+	if isVideo {
+		if didWork := tryReplaceImage(timeoutCtx, &api); !didWork {
+			// fallback, and hopefully it won't explode
+			isVideo = false
+		}
+	}
 
 	daTemplate, parseErr := template.New("dxviantart").Parse(staticTemplate)
 	if parseErr != nil {
@@ -176,6 +282,8 @@ func getImage(w http.ResponseWriter, r *http.Request) {
 		),
 		"author":    api.Author,
 		"randomHex": rngHex(),
+		"isVideo":   isVideo,
+		"thumbnail": api.Thumbnail,
 	}); execErr != nil {
 		log.Println(execErr)
 
