@@ -1,13 +1,40 @@
 <h1 align="center">📦 FixDeviantArt 📦</h1>
-<p align="center"><b>It's like <a href="https://daisyUniverse/fxdeviantart">fxDeviantArt</a>, with a bit of extra spice. 🌶️</b></p>
+<p align="center"><b>It's like <a href="https://github.com/daisyUniverse/fxdeviantart">fxDeviantArt</a>, with a bit of extra spice. 🌶️</b></p>
 <br>
 <h2 align="center">Features</h2>
-<p align="center">
-&bullet; Fixes embeds for Discord<br>
-&bullet; Fixes embeds for Telegram<br>
-&bullet; Adds statistics to the image (how many views, favorites, etc.)<br>
-&bullet; Randomly generated theme colors every time
-</p>
+<table align="center">
+  <p align="center">The features table system™</p>
+  <tr>
+    <th>Feature</th>
+    <th>fxDeviantArt</th>
+    <th>FixDeviantArt</th>
+  </tr>
+  <tr>
+    <td>Fix nsfw embeds</td>
+    <td>✅</td>
+    <td>✅</td>
+  </tr>
+  <tr>
+    <td>Fix gif embeds</td>
+    <td>✅</td>
+    <td>✅</td>
+  </tr>
+  <tr>
+    <td>Fix video embeds</td>
+    <td>❌</td>
+    <td>🟨<sup>Partially</sup></td>
+  </tr>
+   <tr>
+    <td>Add statistics to the image</td>
+    <td>❌</td>
+    <td>✅</td>
+  </tr>
+  <tr>
+    <td>Randomly generate theme colors every time</td>
+    <td>❌</td>
+    <td>✅</td>
+  </tr>
+</table>
 <br>
 <h2 align="center">I don't wanna be redirected!</h2>
 <p align="center">I hear ya. Add a <code>?staypls=1</code> query parameter to disable redirects.<br>à la; <code>https://dxviantart.com/coolartist/art/cool-art-piece?staypls=1</code></p>
