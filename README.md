@@ -16,8 +16,8 @@
   </tr>
   <tr>
     <td>Fix gif embeds</td>
-    <td>✅</td>
-    <td>✅</td>
+    <td>🟨<sup>Partially</sup></td>
+    <td>🟨<sup>Partially</sup></td>
   </tr>
   <tr>
     <td>Fix video embeds</td>
