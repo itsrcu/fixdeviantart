@@ -41,6 +41,7 @@ type deviantArtAPI struct {
 var (
 	embedLinkRegex   = regexp.MustCompile(`(?m)https:\/\/backend\.deviantart\.com\/embed\/film[^"]*`)
 	sourcesRegex     = regexp.MustCompile(`(?m)gmon-sources="[^"]*`)
+	gifRegex         = regexp.MustCompile(`(?m)\.gif[^?]*`)
 	idealResolutions = []string{"1080p", "720p", "360p"}
 )
 
@@ -155,7 +156,12 @@ func formatNumber(number float64) string {
 func tryReplaceImage(ctx context.Context, api *deviantArtAPI) bool {
 	url := embedLinkRegex.FindString(api.VideoHTML)
 	if url == "" {
-		return false
+		// check if we can construct it ourselves
+		if lastIndex := strings.LastIndex(api.Image, "-"); lastIndex != -1 {
+			url = fmt.Sprintf("https://backend.deviantart.com/embed/film/%s/1/", api.Image[lastIndex+1:])
+		} else {
+			return false
+		}
 	}
 
 	followRequest, followRequestErr := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
@@ -249,13 +255,18 @@ func getImage(w http.ResponseWriter, r *http.Request) {
 
 	isTelegramUA := strings.Contains(r.UserAgent(), "Telegram")
 	noRedirect := r.URL.Query().Get("staypls") == "1"
-	isVideo := api.Type == "video"
+	isVideo := api.Type == "video" || api.Type == "link"
 
 	if isVideo {
 		if didWork := tryReplaceImage(timeoutCtx, &api); !didWork {
 			// fallback, and hopefully it won't explode
 			isVideo = false
 		}
+	}
+
+	// fix gifs
+	if foundGif := gifRegex.FindString(api.Image); foundGif != "" {
+		api.Image = strings.ReplaceAll(api.Image, foundGif, ".gif")
 	}
 
 	daTemplate, parseErr := template.New("dxviantart").Parse(staticTemplate)

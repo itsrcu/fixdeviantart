@@ -6,31 +6,37 @@
   <p align="center">The features table system™</p>
   <tr>
     <th>Feature</th>
+    <th>DeviantArt</th>
     <th>fxDeviantArt</th>
     <th>FixDeviantArt</th>
   </tr>
   <tr>
-    <td>Fix nsfw embeds</td>
+    <td>Has nsfw embeds</td>
+    <td>❌</td>
     <td>✅</td>
     <td>✅</td>
   </tr>
   <tr>
-    <td>Fix gif embeds</td>
-    <td>🟨<sup>Partially</sup></td>
-    <td>🟨<sup>Partially</sup></td>
-  </tr>
-  <tr>
-    <td>Fix video embeds</td>
+    <td>Has gif embeds</td>
     <td>❌</td>
     <td>🟨<sup>Partially</sup></td>
+    <td>✅</td>
+  </tr>
+  <tr>
+    <td>Has video embeds</td>
+    <td>❌</td>
+    <td>❌</td>
+    <td>✅</td>
   </tr>
    <tr>
-    <td>Add statistics to the image</td>
+    <td>Adds statistics to the image</td>
+    <td>❌</td>
     <td>❌</td>
     <td>✅</td>
   </tr>
   <tr>
-    <td>Randomly generate theme colors every time</td>
+    <td>Randomly generates theme colors every time</td>
+    <td>❌</td>
     <td>❌</td>
     <td>✅</td>
   </tr>
