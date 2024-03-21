@@ -18,6 +18,8 @@ import (
 )
 
 type deviantArtAPI struct {
+	Width     any    `json:"width"`
+	Height    any    `json:"height"`
 	Type      string `json:"type"`
 	Title     string `json:"title"`
 	Image     string `json:"url"`
@@ -34,12 +36,10 @@ type deviantArtAPI struct {
 			} `json:"_attributes"`
 		} `json:"statistics"`
 	} `json:"community"`
-	Width  any `json:"width"`
-	Height any `json:"height"`
 }
 
 var (
-	embedLinkRegex   = regexp.MustCompile(`(?m)https:\/\/backend\.deviantart\.com\/embed\/film[^"]*`)
+	embedLinkRegex   = regexp.MustCompile(`(?m)https://backend\.deviantart\.com/embed/film[^"]*`)
 	sourcesRegex     = regexp.MustCompile(`(?m)gmon-sources="[^"]*`)
 	gifRegex         = regexp.MustCompile(`(?m)\.gif[^?]*`)
 	idealResolutions = []string{"1080p", "720p", "360p"}
@@ -157,11 +157,12 @@ func tryReplaceImage(ctx context.Context, api *deviantArtAPI) bool {
 	url := embedLinkRegex.FindString(api.VideoHTML)
 	if url == "" {
 		// check if we can construct it ourselves
-		if lastIndex := strings.LastIndex(api.Image, "-"); lastIndex != -1 {
-			url = fmt.Sprintf("https://backend.deviantart.com/embed/film/%s/1/", api.Image[lastIndex+1:])
-		} else {
+		lastIndex := strings.LastIndex(api.Image, "-")
+		if lastIndex == -1 {
 			return false
 		}
+
+		url = fmt.Sprintf("https://backend.deviantart.com/embed/film/%s/1/", api.Image[lastIndex+1:])
 	}
 
 	followRequest, followRequestErr := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
